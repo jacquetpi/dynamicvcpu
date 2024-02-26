@@ -1,4 +1,5 @@
 from schedulerlocal.subset.subset import SubsetCollection, Subset, CpuSubset, CpuElasticSubset, MemSubset
+from schedulerlocal.subset.subsetmarket import SubsetMarket
 from schedulerlocal.domain.domainentity import DomainEntity
 from schedulerlocal.node.cpuexplorer import CpuExplorer
 from schedulerlocal.node.memoryexplorer import MemoryExplorer
@@ -355,6 +356,7 @@ class CpuSubsetManager(SubsetManager):
             available_cpus_ordered = self.__get_closest_available_cpus(cpu_subset) # Recompute based on chosen starting point
             for i in range(initial_capacity): cpu_subset.add_res(available_cpus_ordered[i])
 
+        self.market.register_actor(actor=cpu_subset, priority=-oversubscription)
         return cpu_subset
 
     def try_to_extend_subset(self, subset : CpuSubset, amount : int):
@@ -588,6 +590,10 @@ class CpuElasticSubsetManager(CpuSubsetManager):
         Monitoring session and size adjustement of subset
     """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.market = SubsetMarket()
+
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float):
         """Try to create subset with specified capacity
         ----------
@@ -604,7 +610,13 @@ class CpuElasticSubsetManager(CpuSubsetManager):
         subset : Subset
             Return CpuSubset created. None if failed.
         """
-        return super().try_to_create_subset(initial_capacity=initial_capacity, oversubscription=oversubscription, subset_type=CpuElasticSubset)
+        elastic_subset = super().try_to_create_subset(initial_capacity=initial_capacity, oversubscription=oversubscription, subset_type=CpuElasticSubset)
+        elastic_subset.register_market(self.market)
+        return elastic_subset
+
+    def iterate(self, timestamp : int, offline : bool = False):
+        super().iterate(timestamp)
+        self.market.execute_orders()
 
     def __str__(self):
         return 'CPUElasticSubsetManager:\n' +  str(self.collection)
@@ -830,7 +842,7 @@ class SubsetManagerPool(object):
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
         self.subset_managers = {
-            'cpu': CpuSubsetManager(connector=self.connector, endpoint_pool=self.endpoint_pool, cpuset=self.cpuset, distance_max=50, offline=self.offline),\
+            'cpu': CpuElasticSubsetManager(connector=self.connector, endpoint_pool=self.endpoint_pool, cpuset=self.cpuset, distance_max=50, offline=self.offline),\
             'mem': MemSubsetManager(connector=self.connector, endpoint_pool=self.endpoint_pool, memset=self.memset)
             }
         self.watch_out_of_schedulers_vm() # Manage pre-installed VMs

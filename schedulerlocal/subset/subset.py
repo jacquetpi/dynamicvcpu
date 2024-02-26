@@ -1,4 +1,5 @@
-from schedulerlocal.subset.subsetoversubscription import SubsetOversubscription, SubsetOversubscriptionStatic
+from schedulerlocal.subset.subsetoversubscription import SubsetOversubscription, SubsetOversubscriptionStatic, SubsetOversubscriptionBasedOnPerf
+from schedulerlocal.subset.subsetmarket import SubsetMarket
 from schedulerlocal.domain.domainentity import DomainEntity
 from schedulerlocal.domain.libvirtconnector import LibvirtConnector, ConsumerNotAlived
 from schedulerlocal.dataendpoint.dataendpointpool import DataEndpointPool
@@ -38,8 +39,12 @@ class Subset(object):
         Count resources in subset
     """
     def __init__(self, **kwargs):
-        self.oversubscription = SubsetOversubscriptionStatic(subset=self, ratio=kwargs['oversubscription'])
         self.endpoint_pool = kwargs['endpoint_pool']
+        # For retrocompatibility
+        if type(kwargs['oversubscription']) == float:
+            self.oversubscription = SubsetOversubscriptionStatic(subset=self, ratio=kwargs['oversubscription'])
+        else:
+            self.oversubscription = kwargs['oversubscription']
         opt_attributes = ['res_list', 'consumer_list', 'consumer_dict']
         for opt_attribute in opt_attributes:
             opt_val = kwargs[opt_attribute] if opt_attribute in kwargs else None
@@ -793,6 +798,7 @@ class CpuElasticSubset(CpuSubset):
     """
 
     def __init__(self, **kwargs):
+        kwargs['oversubscription'] = SubsetOversubscriptionBasedOnPerf(subset=self)
         super().__init__(**kwargs)
         # Additional attributes
         self.active_res = list()
@@ -805,6 +811,10 @@ class CpuElasticSubset(CpuSubset):
         self.MONITORING_LEARNING = int(os.getenv('SCL_ACT_LEARNING')) 
         self.MONITORING_LEEWAY = int(os.getenv('SCL_ACT_LEEWAY'))
         self.predictor = PredictorCsoaa(monitoring_window=self.MONITORING_WINDOW, monitoring_learning=self.MONITORING_LEARNING, monitoring_leeway=self.MONITORING_LEEWAY)
+        self.market = None # to manage request of resources
+
+    def register_market(self, market : SubsetMarket):
+        self.market = market
 
     def get_pinning_res(self):
         """Get the resources to use for synchronisation. May be reimplemented
@@ -848,9 +858,10 @@ class CpuElasticSubset(CpuSubset):
             self.active_res = self.res_list[:next_peak]
             self.sync_pinning()
 
+        # Pass order on market based on it TODO
+        self.market.pass_order(actor=self, request=0)
         return subset_usage, consumers_usage, clean_needed
         
-
     def manage_hist_records(self, timestamp, subset_usage, consumers_usage):
         """Add new records to the subset collection attributes and manage expired data
         ----------
