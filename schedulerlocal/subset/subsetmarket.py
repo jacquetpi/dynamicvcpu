@@ -30,12 +30,13 @@ class SubsetMarket(object):
     """
 
     def __init__(self, **kwargs):
+        self.cpu_count = kwargs['cpu_count']
         self.actors_priority = dict()
         self.actors          = list()
         self.actor_fallback  = None
         self.current_orders  = dict()
 
-    def is_market_effective(self, with_vm : DomainEntity = None):
+    def is_market_effective(self):
         """Return a boolean VM based on market mechanism being currently applied or not
         ----------
 
@@ -49,7 +50,13 @@ class SubsetMarket(object):
         status : bool
             True if effective, False otherwise
         """
-        return True
+        allocation = 0
+        for actor in self.actors:
+            allocation += actor.get_allocation()
+            
+        if allocation > self.cpu_count:
+            return True
+        return False
 
     def register_actor(self, actor : CpuElasticSubset, priority : int):
         """Register an actor (associated to its priority) in the Market system

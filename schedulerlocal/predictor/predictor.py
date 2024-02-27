@@ -30,6 +30,15 @@ class Predictor(object):
         raise ValueError('Not implemented')
 
 
+class PredictorScrooge(Predictor):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def predict():
+        # TODO
+        return 0
+
 class PredictorCsoaa(Predictor):
     """
     This class use a CSOAA: Cost-Sensitive One Against All classifier to predict next active resources

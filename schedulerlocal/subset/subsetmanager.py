@@ -4,6 +4,7 @@ from schedulerlocal.domain.domainentity import DomainEntity
 from schedulerlocal.node.cpuexplorer import CpuExplorer
 from schedulerlocal.node.memoryexplorer import MemoryExplorer
 from schedulerlocal.subset.templateoversubscription import *
+import schedulerlocal.node.cpusetutils as cpuset_utils
 import math
 
 class SubsetManager(object):
@@ -316,12 +317,12 @@ class CpuSubsetManager(SubsetManager):
 
     def deploy(self, vm : DomainEntity):
         success = super().deploy(vm)
-        if success: self.balance_available_resources()
+        #if success: self.balance_available_resources() # TODO: double check if needed?
         return success
 
     def remove(self, vm : DomainEntity):
         success = super().remove(vm)
-        if success: self.balance_available_resources()
+        #if success: self.balance_available_resources() # TODO: double check if needed?
         return success
 
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float, subset_type : type = CpuSubset):
@@ -345,7 +346,15 @@ class CpuSubsetManager(SubsetManager):
         # Starting point
         available_cpus_ordered = self.__get_farthest_available_cpus()
 
-        if len(available_cpus_ordered) < initial_capacity: return None
+        if len(available_cpus_ordered) < initial_capacity: 
+            # If type of subsetmanager allows it, try to reclaim from existing subsets
+            amount_post_reclaim = len(available_cpus_ordered) + len(self.try_to_reclaim_for_subset(simulation=True, request=(initial_capacity - len(available_cpus_ordered))))
+            if amount_post_reclaim < initial_capacity: 
+                return None # Failed
+            
+            available_cpus_ordered.extend(self.try_to_reclaim_for_subset(simulation=False, request=(initial_capacity - len(available_cpus_ordered))))
+            
+        # Starting allocation
         starting_cpu = available_cpus_ordered[0]
         cpu_subset = subset_type(connector=self.connector, cpu_explorer=self.cpu_explorer, endpoint_pool=self.endpoint_pool,\
             oversubscription=oversubscription, cpu_count=self.cpuset.get_host_count(), offline=self.offline)
@@ -377,9 +386,34 @@ class CpuSubsetManager(SubsetManager):
         """
         if amount<=0: return True
         available_cpus_ordered = self.__get_closest_available_cpus(subset)
-        if len(available_cpus_ordered) < amount: return None
+        if len(available_cpus_ordered) < amount:
+            # If type of subsetmanager allows it, try to reclaim from existing subsets
+            amount_post_reclaim = len(available_cpus_ordered) + len(self.try_to_reclaim_for_subset(simulation=True, subset=subset, request=(amount - len(available_cpus_ordered))))
+            if amount_post_reclaim < amount: 
+                return None # Failed
+
+            available_cpus_ordered.extend(self.try_to_reclaim_for_subset(simulation=False, subset=subset, request=(amount - len(available_cpus_ordered))))
+            
         subset.add_res(available_cpus_ordered[0])
         return self.try_to_extend_subset(subset,amount=(amount-1))
+
+    def try_to_reclaim_for_subset(self,  request : int, subset : CpuSubset = None, simulation : bool = True):
+        """Try to reclaim resources from existing subset
+        ----------
+
+        Parameters
+        ----------
+        subset : SubSet
+            The amount requested
+        amount : int
+            Resources requested
+
+        Returns
+        -------
+        success : bool
+            Return success status of operation
+        """
+        return list() # Default is "no reclaim"
 
     def balance_available_resources(self):
         """If critical size is not reached on an oversubscribed subset and available resources are present, distribute them
@@ -429,14 +463,14 @@ class CpuSubsetManager(SubsetManager):
         """
         cpuid_dict = {cpu.get_cpu_id():cpu for cpu in self.cpuset.get_cpu_list()}
         available_list = self.__get_available_cpus()
-        available_cpu_weighted = self.__get_available_cpus_with_weight(from_list=available_list, to_list=subset.get_res(), exclude_max=False)
+        available_cpu_weighted = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, distance_max=self.distance_max, from_list=available_list, to_list=subset.get_res(), exclude_max=False)
 
         # Now, we penalize cores that are closer to others subset
         penalty = max(available_cpu_weighted.values()) if available_cpu_weighted else 0
         for other_subset in self.collection.get_subsets():
             if other_subset.get_oversubscription_id() == subset.get_oversubscription_id(): continue
 
-            other_cpu_weighted = self.__get_available_cpus_with_weight(from_list=available_list, to_list=other_subset.get_res(), exclude_max=False)
+            other_cpu_weighted = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, distance_max=self.distance_max, from_list=available_list, to_list=other_subset.get_res(), exclude_max=False)
             for cpuid in available_cpu_weighted.keys():
                 if other_cpu_weighted[cpuid] < available_cpu_weighted[cpuid]: available_cpu_weighted[cpuid] += penalty
 
@@ -456,50 +490,9 @@ class CpuSubsetManager(SubsetManager):
         cpuid_dict = {cpu.get_cpu_id():cpu for cpu in self.cpuset.get_cpu_list()}
         available_list = self.__get_available_cpus()
         allocated_list = self.collection.get_res()
-        available_cpu_weighted = self.__get_available_cpus_with_weight(from_list=available_list, to_list=allocated_list, exclude_max=False)
+        available_cpu_weighted = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, distance_max=self.distance_max, from_list=available_list, to_list=allocated_list, exclude_max=False)
         # Reorder distances from the farthest one to the closest one
         return [cpuid_dict[cpuid] for cpuid, v in sorted(available_cpu_weighted.items(), key=lambda item: item[1], reverse=True)]
-
-    def __get_available_cpus_with_weight(self, from_list : list, to_list : list, exclude_max : bool = True):
-        """Computer the average distance of CPU presents in from_list to the one in to_list
-        ----------
-
-        Parameters
-        ----------
-        from_list : list
-            list of ServerCPU
-        to_list : list
-            list of ServerCPU
-        exclude_max : bool (optional)
-            Should CPU having a distance value higher than the one fixed in max_distance attribute being disregarded
-        
-        Returns
-        -------
-        distance : dict
-            Dict of CPUID (as key) with average distance being computed
-        """
-        computed_distances = dict()
-        for available_cpu in from_list:
-            total_distance = 0
-            total_count = 0
-
-            exclude_identical = False
-            for subset_cpu in to_list:
-                if subset_cpu == available_cpu: 
-                    exclude_identical = True
-                    break
-
-                distance = self.cpuset.get_distance_between_cpus(subset_cpu, available_cpu)
-                if exclude_max and (distance >= self.distance_max): continue
-
-                total_distance+=distance
-                total_count+=1
-
-            if exclude_identical : continue
-            if total_count <= 0: computed_distances[available_cpu.get_cpu_id()] = 0
-            elif total_distance>=0: computed_distances[available_cpu.get_cpu_id()] = total_distance/total_count
-
-        return computed_distances
 
     def __get_available_cpus(self):
         """Retrieve the list of CPUs without subset attribution
@@ -592,7 +585,7 @@ class CpuElasticSubsetManager(CpuSubsetManager):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.market = SubsetMarket()
+        self.market = SubsetMarket(cpu_count=self.cpuset.get_host_count())
 
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float):
         """Try to create subset with specified capacity
@@ -611,8 +604,29 @@ class CpuElasticSubsetManager(CpuSubsetManager):
             Return CpuSubset created. None if failed.
         """
         elastic_subset = super().try_to_create_subset(initial_capacity=initial_capacity, oversubscription=oversubscription, subset_type=CpuElasticSubset)
-        elastic_subset.register_market(self.market)
+        if elastic_subset != None:
+            elastic_subset.register_market(self.market)
+            self.market.register_actor(actor=elastic_subset, priority=oversubscription)
         return elastic_subset
+
+    def try_to_reclaim_for_subset(self, request : int, subset : CpuSubset = None, simulation : bool = True):
+        """Try to reclaim resources from existing subset
+        ----------
+
+        Parameters
+        ----------
+        subset : SubSet
+            The amount requested
+        amount : int
+            Resources requested
+
+        Returns
+        -------
+        success : bool
+            Return success status of operation
+        """
+        #TODO: from market
+        return list()
 
     def iterate(self, timestamp : int, offline : bool = False):
         super().iterate(timestamp)

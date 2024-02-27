@@ -3,7 +3,6 @@ from schedulerlocal.subset.subsetmarket import SubsetMarket
 from schedulerlocal.domain.domainentity import DomainEntity
 from schedulerlocal.domain.libvirtconnector import LibvirtConnector, ConsumerNotAlived
 from schedulerlocal.dataendpoint.dataendpointpool import DataEndpointPool
-from schedulerlocal.predictor.predictor import PredictorCsoaa
 import os, numpy as np
 from math import ceil
 
@@ -392,7 +391,7 @@ class Subset(object):
         """Deploy a VM on resources. Resource dependant. Must be reimplemented with a super call
         Should adapt the DomainEntity object as required before the subsetManager applies changes with connector
         """
-        available_oversubscribed = self.oversubscription.get_available(with_new_vm=True)
+        available_oversubscribed = self.oversubscription.get_available(with_new_resources=res_quantity)
         if available_oversubscribed < res_quantity: 
             print('Warning: Not enough resources available to deploy', vm.get_name(), 'on res', self.get_res_name(), 'for request', res_quantity)
             return False
@@ -408,7 +407,7 @@ class Subset(object):
         status : dict
             Subset status as dict
         """
-        return {'pcap': self.get_capacity(), 'palloc': self.get_allocation(), 'vavail': self.oversubscription.get_available(with_new_vm=True)}
+        return {'pcap': self.get_capacity(), 'palloc': self.get_allocation(), 'vavail': self.oversubscription.get_available()}
 
     def update_monitoring(self, timestamp : int):
         """Order a monitoring session on current subset with specified timestamp key
@@ -804,17 +803,14 @@ class CpuElasticSubset(CpuSubset):
         self.active_res = list()
         self.hist_usage = list()
         self.hist_consumers_usage = dict()
-        # TODO: retrieve pre-existing records?
-        # TODO: is hist still needed in this class? Predictor object attributes may be enough
         # Retrieve specific configuration
         self.MONITORING_WINDOW = int(os.getenv('SCL_ACT_MONITORING')) #records older than this value are progressively purged
         self.MONITORING_LEARNING = int(os.getenv('SCL_ACT_LEARNING')) 
         self.MONITORING_LEEWAY = int(os.getenv('SCL_ACT_LEEWAY'))
-        self.predictor = PredictorCsoaa(monitoring_window=self.MONITORING_WINDOW, monitoring_learning=self.MONITORING_LEARNING, monitoring_leeway=self.MONITORING_LEEWAY)
         self.market = None # to manage request of resources
 
     def register_market(self, market : SubsetMarket):
-        self.market = market
+        self.oversubscription.register_market(market)
 
     def get_pinning_res(self):
         """Get the resources to use for synchronisation. May be reimplemented
@@ -852,6 +848,9 @@ class CpuElasticSubset(CpuSubset):
             return subset_usage, consumers_usage, clean_needed
 
         # Update active resources
+        self.active_res = self.oversubscription
+
+        # TODO: should be managed through
         next_peak = self.predictor.predict(timestamp=timestamp, current_resources=self.count_res(),\
             allocation=self.get_allocation(), metric=subset_usage)
         if next_peak != len(self.active_res):

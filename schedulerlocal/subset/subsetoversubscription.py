@@ -1,4 +1,6 @@
 from schedulerlocal.domain.domainentity import DomainEntity
+from schedulerlocal.predictor.predictor import PredictorCsoaa, PredictorScrooge
+from schedulerlocal.subset.subsetmarket import SubsetMarket
 from math import ceil, floor
 import os
 
@@ -75,15 +77,15 @@ class SubsetOversubscriptionStatic(SubsetOversubscription):
         for req_attribute in req_attributes:
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
-        self.critical_size = int(os.getenv('OVSB_CRITICAL_SIZE'))
+        self.critical_size = 1
 
-    def get_available(self, with_new_vm : bool = False):
+    def get_available(self, with_new_resources : int = 0):
         """Return the number of virtual resource available
         ----------
 
         Parameters
         ----------
-        with_new_vm : bool (opt)
+        with_new_resources : int (opt)
             If a new VM is to be considered while computing if critical size is reached
 
         Returns
@@ -91,6 +93,9 @@ class SubsetOversubscriptionStatic(SubsetOversubscription):
         available : int
             count of available resources
         """
+        with_new_vm = False
+        if with_new_resources>0:
+            with_new_vm = True
         return self.get_oversubscribed_quantity(quantity=self.subset.get_capacity(), with_new_vm=with_new_vm) - self.subset.get_allocation()
 
     def get_oversubscribed_quantity(self, quantity : int, with_new_vm : bool = False):
@@ -220,7 +225,7 @@ class SubsetOversubscriptionStatic(SubsetOversubscription):
 
 class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
     """
-    A SubsetOversubscriptionStatic implements a static oversubscription mechanism (i.e. resource are oversubscribed by a fixed ratio)
+    A SubsetOversubscriptionBasedOnPerf implements a dynamic oversubscription mechanism
 
     Attributes
     ----------
@@ -236,14 +241,29 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         for req_attribute in req_attributes:
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
+        self.predictor = PredictorScrooge()
 
-    def get_available(self, with_new_vm : bool = False):
+    def register_market(self, market : SubsetMarket):
+        self.market = market
+
+    def get_market_request(self):
+        if not self.market.is_market_effective():
+            return 0
+
+        peak = self.predictor.predict()
+        peak_with_constraint =  peak*(1+(self.ratio/100))
+        request = 0
+        if peak_with_constraint < self.subset.count_res():
+            request = peak_with_constraint - self.subset.count_res()
+        return request
+
+    def get_available(self, with_new_resources : int  = 0):
         """Return the number of virtual resource available. May be negative
         ----------
 
         Parameters
         ----------
-        with_new_vm : bool (opt)
+        with_new_resources : int (opt)
             If a new VM is to be considered while computing if critical size is reached
 
         Returns
@@ -251,56 +271,9 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         available : int
             count of available resources
         """
-        #TODO
-        return 0
-        return self.subset.count_res() - self.get_required_quantity(with_new_vm=with_new_vm)
-
-    def get_market_request(self):
-        available = self.get_available()
-        if available >=0:
-            return 0
-        return - available
-
-    def get_required_quantity(self, quantity : int, with_new_vm : bool = False):
-        """Based on a specific quantity, return oversubscribed equivalent
-        ----------
-
-        Parameters
-        ----------
-        quantity : int
-            Quantity to be oversubscribed
-        with_new_vm : bool (opt)
-            If a new VM is to be considered while computing if critical size is reached
-
-        Returns
-        -------
-        quantity : int
-            Quantity oversubscribed
-        """
-        return quantity*self.__get_effective_ratio(with_new_vm)
-
-    def unused_resources_count(self):
-        """Return attributed physical resources which are unused
-        ----------
-
-        Returns
-        -------
-        unused : int
-            count of unused resources
-        """
-        available_oversubscribed = self.get_available()
-        unused_cpu = floor(available_oversubscribed/self.__get_effective_ratio())
-
-        used_cpu = self.subset.get_capacity() - unused_cpu
-
-        # Test specific case: our unused count floor should not reduce the capacity below the maximum configuration observed
-        # Avoid VM to be oversubscribed with themselves
-        max_alloc = self.subset.get_max_consumer_allocation()
-        if used_cpu < max_alloc: return max(0, floor(self.subset.get_capacity()-max_alloc))
-    
-        # Generic case
-        return unused_cpu
-
+        if(not self.market.is_market_effective()):
+            return self.subset.count_res() - self.subset.get_allocation()
+        return self.subset.count_res() - (1+(self.ratio/100))*self.predictor.predict()
 
     def get_additional_res_count_required_for_quantity(self, vm : DomainEntity, quantity : float):
         """Return the number of additional physical resource required to deploy specified vm. 
@@ -322,11 +295,9 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         request    = quantity                   # Without oversubscription
         capacity   = self.subset.get_capacity() # Without oversubscription
 
-        # Compute new resources needed based on oversubcription ratio
-        available_oversubscribed = self.get_available()
+        # TODO: computation based on predict
+        return 1
 
-        missing_oversubscribed   = (request - available_oversubscribed)
-        missing_physical = ceil(missing_oversubscribed/self.__get_effective_ratio(with_new_vm=True)) if missing_oversubscribed > 0 else 0
         new_capacity = capacity + missing_physical
 
         # Check if new_capacity is enough to fullfil VM request without oversubscribing it with itself
@@ -346,28 +317,8 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         id : str
            oversubscription id
         """
-        return self.ratio
+        return 'dynamic'
 
-    def __get_effective_ratio(self, with_new_vm : bool = False):
-        """Get oversubscription ratio to apply based on if critical size was reached or not
-        ----------
-
-        Parameters
-        ----------
-        with_new_vm : bool (opt)
-            If a new VM is to be considered while computing if critical size is reached
-
-        Returns
-        -------
-        ratio : float
-           oversubscription
-        """
-        # Best effort strategy
-        return self.ratio
-        # Guarantee strategy
-        # if self.is_critical_size_reached(with_new_vm=with_new_vm):
-        #     return self.ratio
-        # return 1.0
 
     def __str__(self):
         return 'perf oc:'
