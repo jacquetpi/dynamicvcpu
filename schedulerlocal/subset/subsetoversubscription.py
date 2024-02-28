@@ -246,16 +246,24 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
     def register_market(self, market : SubsetMarket):
         self.market = market
 
-    def get_market_request(self):
-        if not self.market.is_market_effective():
-            return 0
+    def is_oversubscription_effective(self):
+        return self.market.is_market_effective(recompute=False)
+
+    def get_default_resources(self):
+        return self.market.get_default_resources()
+
+    def update_perf(self, subset_usage : list):
+        if not self.market.is_market_effective(recompute=False):
+            self.market.pass_order(self.subset, 0)
+            return
 
         peak = self.predictor.predict()
         peak_with_constraint =  peak*(1+(self.ratio/100))
         request = 0
         if peak_with_constraint < self.subset.count_res():
             request = peak_with_constraint - self.subset.count_res()
-        return request
+            
+        self.market.pass_order(self.subset, request)
 
     def get_available(self, with_new_resources : int  = 0):
         """Return the number of virtual resource available. May be negative

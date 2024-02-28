@@ -799,15 +799,14 @@ class CpuElasticSubset(CpuSubset):
     def __init__(self, **kwargs):
         kwargs['oversubscription'] = SubsetOversubscriptionBasedOnPerf(subset=self)
         super().__init__(**kwargs)
+
         # Additional attributes
-        self.active_res = list()
         self.hist_usage = list()
         self.hist_consumers_usage = dict()
         # Retrieve specific configuration
         self.MONITORING_WINDOW = int(os.getenv('SCL_ACT_MONITORING')) #records older than this value are progressively purged
         self.MONITORING_LEARNING = int(os.getenv('SCL_ACT_LEARNING')) 
         self.MONITORING_LEEWAY = int(os.getenv('SCL_ACT_LEEWAY'))
-        self.market = None # to manage request of resources
 
     def register_market(self, market : SubsetMarket):
         self.oversubscription.register_market(market)
@@ -820,7 +819,8 @@ class CpuElasticSubset(CpuSubset):
         list : ServerCPU list
             list of resources to use
         """
-        if self.active_res: return self.active_res
+        if not self.oversubscription.is_oversubscription_effective():
+            return self.oversubscription.get_default_resources()
         return self.res_list
 
     def update_monitoring(self, timestamp : int):
@@ -847,18 +847,9 @@ class CpuElasticSubset(CpuSubset):
         if subset_usage is None:
             return subset_usage, consumers_usage, clean_needed
 
-        # Update active resources
-        self.active_res = self.oversubscription
-
         # TODO: should be managed through
-        next_peak = self.predictor.predict(timestamp=timestamp, current_resources=self.count_res(),\
-            allocation=self.get_allocation(), metric=subset_usage)
-        if next_peak != len(self.active_res):
-            self.active_res = self.res_list[:next_peak]
-            self.sync_pinning()
-
-        # Pass order on market based on it TODO
-        self.market.pass_order(actor=self, request=0)
+        self.oversubscription.update_perf(subset_usage)
+        
         return subset_usage, consumers_usage, clean_needed
         
     def manage_hist_records(self, timestamp, subset_usage, consumers_usage):
@@ -921,7 +912,6 @@ class CpuElasticSubset(CpuSubset):
     def __str__(self):
         return 'CpuElasticSubset oc:' + str(self.oversubscription) + ' alloc:' + str(self.get_allocation()) + ' capacity:' + str(self.get_capacity()) +\
             ' res:' + str([str(cpu.get_cpu_id()) for cpu in self.get_res()]) +\
-            ' active:' + str([str(cpu.get_cpu_id()) for cpu in self.active_res]) +\
             ' vm:' + str([vm.get_name() for vm in self.get_consumers()])
 
 class MemSubset(Subset):

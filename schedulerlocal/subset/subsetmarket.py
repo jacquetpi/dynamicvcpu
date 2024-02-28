@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from schedulerlocal.subset.subset import CpuElasticSubset
 
+import schedulerlocal.node.cpusetutils as cpuset_utils
 from schedulerlocal.domain.domainentity import DomainEntity
 from math import ceil, floor
 
@@ -30,33 +31,46 @@ class SubsetMarket(object):
     """
 
     def __init__(self, **kwargs):
-        self.cpu_count = kwargs['cpu_count']
+        self.cpuset = kwargs['cpuset']
         self.actors_priority = dict()
         self.actors          = list()
         self.actor_fallback  = None
         self.current_orders  = dict()
+        self.effective = None
 
-    def is_market_effective(self):
+    def is_market_effective(self, recompute : bool = True):
         """Return a boolean VM based on market mechanism being currently applied or not
         ----------
 
         Parameters
         ----------
-        vm : DomainEntity
-            The VM to consider
+        recompute : bool
+            Force to recompute condition
 
         Returns
         -------
         status : bool
             True if effective, False otherwise
         """
-        allocation = 0
-        for actor in self.actors:
-            allocation += actor.get_allocation()
-            
-        if allocation > self.cpu_count:
-            return True
-        return False
+        if (self.effective is None) or recompute:
+            allocation = 0
+            for actor in self.actors:
+                allocation += actor.get_allocation()
+                
+            # Introduce a margin to avoid too frequent switch on low oversubscribed environment
+            margin=1
+            if self.effective == True:
+                margin=0.8
+
+            if allocation > (len(self.cpuset.get_cpu_list())*margin):
+                self.effective = True
+            else:
+                self.effective = False
+
+        return self.effective
+
+    def get_default_resources(self):
+        return self.cpuset.get_cpu_list()
 
     def register_actor(self, actor : CpuElasticSubset, priority : int):
         """Register an actor (associated to its priority) in the Market system
@@ -124,7 +138,7 @@ class SubsetMarket(object):
         removed_from_market = list()
         for actor in self.actors:  # Ordered from the high priority to the low-priority
             if (actor in self.current_orders and self.current_orders[actor]>0): #need core(s)
-                renter = self.__get_renter(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
+                self.__get_renter(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
                 removed_from_market.append(actor)
         ## Clean orders
         self.current_orders.clear()
@@ -145,16 +159,44 @@ class SubsetMarket(object):
         # First,  ask nicely
         # Second, ask authoritatively
         # Third,  steal from weakest
-        fullfilled = False
+    
+        count_to_reclaim = quantity
 
         # First, Nicely
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
-            if actor.get_available() >= quantity:
-                #TODO re-allocate. But what about scarsed resources?
-                pass
-            
-        if not fullfilled and (requester != self.actor_fallback):
+            if actor.get_available() >= 0:
+                reclaim_from_specific_actor = min(actor.get_available(), count_to_reclaim)
+                count_to_reclaim -= reclaim_from_specific_actor
+                self.__transfer_resources(receiver=requester, sender=actor, amount=reclaim_from_specific_actor)
+
+            if count_to_reclaim <= 0:
+                break
+
+        # Third, steal
+        if (count_to_reclaim>0) and (requester != self.actor_fallback):
             # TODO: use fallback
             pass
+
+    def __transfer_resources(self, receiver : CpuElasticSubset, sender : CpuElasticSubset, amount : int):
+        """Transfer resources between two subsets
+        ----------
+
+        Parameters
+        ----------
+        receiver : CpuElasticSubset
+            subset receiving the resources
+        sender : CpuElasticSubset
+            subset requesting the resources
+        amount : int
+            Number of resources in transaction
+        """
+        candidates = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, from_list=sender.get_res(), to_list=receiver.get_res(), exclude_max=False, distance_max=50)
+        candidates_ordered = sorted(candidates.items(), key=lambda item: item[1])
+        for index, cpu in enumerate(candidates_ordered):
+            if index >= amount:
+                break
+            sender.remove_res(cpu)
+            receiver.add_res(cpu)
+

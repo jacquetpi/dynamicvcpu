@@ -365,7 +365,7 @@ class CpuSubsetManager(SubsetManager):
             available_cpus_ordered = self.__get_closest_available_cpus(cpu_subset) # Recompute based on chosen starting point
             for i in range(initial_capacity): cpu_subset.add_res(available_cpus_ordered[i])
 
-        self.market.register_actor(actor=cpu_subset, priority=-oversubscription)
+        self.market.register_actor(actor=cpu_subset, priority=oversubscription)
         return cpu_subset
 
     def try_to_extend_subset(self, subset : CpuSubset, amount : int):
@@ -585,7 +585,7 @@ class CpuElasticSubsetManager(CpuSubsetManager):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.market = SubsetMarket(cpu_count=self.cpuset.get_host_count())
+        self.market = SubsetMarket(cpuset=self.cpuset)
 
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float):
         """Try to create subset with specified capacity
@@ -633,7 +633,7 @@ class CpuElasticSubsetManager(CpuSubsetManager):
         self.market.execute_orders()
 
     def __str__(self):
-        return 'CPUElasticSubsetManager:\n' +  str(self.collection)
+        return 'CPUElasticSubsetManager (active:' + str(self.market.is_market_effective(recompute=False)) + '):\n' +  str(self.collection)
 
 class MemSubsetManager(SubsetManager):
     """
