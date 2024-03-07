@@ -847,7 +847,7 @@ class CpuElasticSubset(CpuSubset):
         if subset_usage is None:
             return subset_usage, consumers_usage, clean_needed
 
-        # TODO: should be managed through
+        # Nota bene : Market orders are managed from the oversubscription class
         self.oversubscription.update_perf(subset_usage)
         
         return subset_usage, consumers_usage, clean_needed

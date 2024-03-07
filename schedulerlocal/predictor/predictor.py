@@ -34,10 +34,13 @@ class PredictorScrooge(Predictor):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.last_value = None
 
-    def predict():
-        # TODO
-        return 0
+    def predict(self, data : list, recompute : bool = True):
+        # TODO: implement Scrooge
+        if (self.last_value) is None or recompute:
+            self.last_value = max(data)
+        return self.last_value
 
 class PredictorCsoaa(Predictor):
     """

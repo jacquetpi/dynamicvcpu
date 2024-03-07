@@ -138,13 +138,34 @@ class SubsetMarket(object):
         removed_from_market = list()
         for actor in self.actors:  # Ordered from the high priority to the low-priority
             if (actor in self.current_orders and self.current_orders[actor]>0): #need core(s)
-                self.__get_renter(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
+                
+                self.__get_renters(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
                 removed_from_market.append(actor)
         ## Clean orders
         self.current_orders.clear()
 
-    def __get_renter(self, requester : CpuElasticSubset, quantity : int, to_ignore : list):
-        """Find an appropriate renter for the resource request
+    def reclaim_from_all(self, quantity : int, simulation : bool, requester : CpuElasticSubset = None):
+        """Try to retrieve a specific resource quantity from subsets for given requester
+        ----------
+
+        Parameters
+        ----------
+        requester : Subset
+            subset requesting the resources
+        quantity : int
+            Quantity requested (positive amount)
+        simulation : bool
+            Should resources be actually transfered or not
+
+        Returns
+        -------
+        cpu_affected : List
+            List of CPU affected
+        """
+        return self.__get_renters(requester=requester, quantity=quantity, to_ignore=list(), simulation=simulation)
+
+    def __get_renters(self, requester : CpuElasticSubset, quantity : int, to_ignore : list, simulation : bool = False):
+        """Find appropriate renter(s) for the resource request
         ----------
 
         Parameters
@@ -155,12 +176,20 @@ class SubsetMarket(object):
             Quantity requested (positive amount)
         to_ignore : list
             List of actors to exclude from candidate list
+        simulation : bool
+            Should resources be actually transfered or not
+
+        Returns
+        -------
+        cpu_affected : List
+            List of CPU affected
         """
         # First,  ask nicely
         # Second, ask authoritatively
         # Third,  steal from weakest
     
         count_to_reclaim = quantity
+        cpu_affected = list()
 
         # First, Nicely
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
@@ -169,7 +198,7 @@ class SubsetMarket(object):
             if actor.get_available() >= 0:
                 reclaim_from_specific_actor = min(actor.get_available(), count_to_reclaim)
                 count_to_reclaim -= reclaim_from_specific_actor
-                self.__transfer_resources(receiver=requester, sender=actor, amount=reclaim_from_specific_actor)
+                cpu_affected.extend(self.__transfer_resources(receiver=requester, sender=actor, amount=reclaim_from_specific_actor, simulation=simulation))
 
             if count_to_reclaim <= 0:
                 break
@@ -179,7 +208,9 @@ class SubsetMarket(object):
             # TODO: use fallback
             pass
 
-    def __transfer_resources(self, receiver : CpuElasticSubset, sender : CpuElasticSubset, amount : int):
+        return cpu_affected
+
+    def __transfer_resources(self, receiver : CpuElasticSubset, sender : CpuElasticSubset, amount : int, simulation : bool = False):
         """Transfer resources between two subsets
         ----------
 
@@ -191,12 +222,33 @@ class SubsetMarket(object):
             subset requesting the resources
         amount : int
             Number of resources in transaction
+        simulation : bool
+            Should resources be actually transfered or not
+
+        Returns
+        -------
+        cpu_affected : List
+            List of CPU affected
         """
+        cpu_affected = list()
+
+        # Specific case, receiver is not created yet
+        if receiver is None: 
+            cpu_affected = sender.get_res()[-amount:]
+            if not simulation:
+                for cpu in cpu_affected: 
+                    sender.remove_res(cpu)
+            return cpu_affected
+
+        # Generic case, choose from sender the closest core to receiver
         candidates = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, from_list=sender.get_res(), to_list=receiver.get_res(), exclude_max=False, distance_max=50)
         candidates_ordered = sorted(candidates.items(), key=lambda item: item[1])
         for index, cpu in enumerate(candidates_ordered):
             if index >= amount:
                 break
-            sender.remove_res(cpu)
-            receiver.add_res(cpu)
+            cpu_affected.append(cpu)
+            if not simulation:
+                sender.remove_res(cpu)
+                receiver.add_res(cpu)
+        return cpu_affected
 

@@ -253,12 +253,13 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         return self.market.get_default_resources()
 
     def update_perf(self, subset_usage : list):
-        if not self.market.is_market_effective(recompute=False):
+        if not self.market.is_market_effective(recompute=True):
             self.market.pass_order(self.subset, 0)
             return
 
-        peak = self.predictor.predict()
-        peak_with_constraint =  peak*(1+(self.ratio/100))
+        peak = self.predictor.predict(data=subset_usage, recompute=True)
+
+        peak_with_constraint =  ceil(peak*(1+(self.ratio/100)))
         request = 0
         if peak_with_constraint < self.subset.count_res():
             request = peak_with_constraint - self.subset.count_res()
@@ -279,9 +280,10 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         available : int
             count of available resources
         """
-        if(not self.market.is_market_effective()):
+        if(not self.market.is_market_effective(recompute=False)):
             return self.subset.count_res() - self.subset.get_allocation()
-        return self.subset.count_res() - (1+(self.ratio/100))*self.predictor.predict()
+
+        return self.subset.count_res() - (1+(self.ratio/100))*self.predictor.predict(data=None, recompute=False)
 
     def get_additional_res_count_required_for_quantity(self, vm : DomainEntity, quantity : float):
         """Return the number of additional physical resource required to deploy specified vm. 

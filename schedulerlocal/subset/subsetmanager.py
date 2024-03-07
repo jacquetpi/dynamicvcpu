@@ -625,8 +625,7 @@ class CpuElasticSubsetManager(CpuSubsetManager):
         success : bool
             Return success status of operation
         """
-        #TODO: from market
-        return list()
+        return self.market.reclaim_from_all(requester=subset,quantity=request, simulation=simulation)
 
     def iterate(self, timestamp : int, offline : bool = False):
         super().iterate(timestamp)
