@@ -237,7 +237,7 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        req_attributes = []
+        req_attributes = ['perf']
         for req_attribute in req_attributes:
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
@@ -252,17 +252,18 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
     def get_default_resources(self):
         return self.market.get_default_resources()
 
-    def update_perf(self, subset_usage : list):
+    def update_perf(self, subset_usage_hist : list):
         if not self.market.is_market_effective(recompute=True):
             self.market.pass_order(self.subset, 0)
             return
 
-        peak = self.predictor.predict(data=subset_usage, recompute=True)
+        peak = self.predictor.predict(data=subset_usage_hist, recompute=True)
 
-        peak_with_constraint =  ceil(peak*(1+(self.ratio/100)))
+        peak_with_constraint =  ceil(peak*(1+(self.perf/100)))
         request = 0
-        if peak_with_constraint < self.subset.count_res():
-            request = peak_with_constraint - self.subset.count_res()
+
+        if peak_with_constraint > self.subset.count_res():
+            request = ceil(peak_with_constraint - self.subset.count_res())
             
         self.market.pass_order(self.subset, request)
 
@@ -282,8 +283,7 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         """
         if(not self.market.is_market_effective(recompute=False)):
             return self.subset.count_res() - self.subset.get_allocation()
-
-        return self.subset.count_res() - (1+(self.ratio/100))*self.predictor.predict(data=None, recompute=False)
+        return self.subset.count_res() - ceil( (1+(self.perf/100)) * self.predictor.predict(data=None, recompute=False))
 
     def get_additional_res_count_required_for_quantity(self, vm : DomainEntity, quantity : float):
         """Return the number of additional physical resource required to deploy specified vm. 
@@ -302,13 +302,14 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         missing : int
             number of missing physical resources
         """
-        request    = quantity                   # Without oversubscription
         capacity   = self.subset.get_capacity() # Without oversubscription
+        available  = self.get_available(with_new_resources=quantity) # With oversubscription consideration
 
-        # TODO: computation based on predict
-        return 1
-
-        new_capacity = capacity + missing_physical
+        new_capacity     = capacity
+        missing_physical = 0
+        if available < quantity:
+            missing_physical = quantity - available
+            new_capacity     = capacity + missing_physical
 
         # Check if new_capacity is enough to fullfil VM request without oversubscribing it with itself
         # E.g. a 32vCPU request should be in a pool with 32 physical CPU, no matter what others VM are in it.

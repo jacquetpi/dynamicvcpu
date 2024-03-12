@@ -475,7 +475,7 @@ class CpuSubsetManager(SubsetManager):
                 if other_cpu_weighted[cpuid] < available_cpu_weighted[cpuid]: available_cpu_weighted[cpuid] += penalty
 
         # Reorder distances from the closest one to the farthest one
-        return [cpuid_dict[cpuid] for cpuid, v in sorted(available_cpu_weighted.items(), key=lambda item: item[1])]
+        return [cpuid_dict[cpuid] for cpuid, _ in sorted(available_cpu_weighted.items(), key=lambda item: item[1])]
 
     def __get_farthest_available_cpus(self):
         """When considering subset allocation. One may want to start from the farthest CPU possible

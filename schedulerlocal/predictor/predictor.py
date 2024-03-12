@@ -38,8 +38,12 @@ class PredictorScrooge(Predictor):
 
     def predict(self, data : list, recompute : bool = True):
         # TODO: implement Scrooge
-        if (self.last_value) is None or recompute:
+        if (self.last_value is None) or recompute:
+            if not data:
+                print('Warning, predict was called with no value')
+                return 0 # not defining it as last value to force recompute)
             self.last_value = max(data)
+            #print('Scrooge compute:', self.last_value)
         return self.last_value
 
 class PredictorCsoaa(Predictor):

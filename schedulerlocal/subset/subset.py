@@ -393,7 +393,7 @@ class Subset(object):
         """
         available_oversubscribed = self.oversubscription.get_available(with_new_resources=res_quantity)
         if available_oversubscribed < res_quantity: 
-            print('Warning: Not enough resources available to deploy', vm.get_name(), 'on res', self.get_res_name(), 'for request', res_quantity)
+            print('Warning: Not enough resources available to deploy', vm.get_name(), 'on res', self.get_res_name(), 'for request', res_quantity, '(capacity:', self.get_capacity(), 'avail:', available_oversubscribed,')')
             return False
         self.add_consumer(consumer=vm, res_id=res_id)
         return True
@@ -797,7 +797,8 @@ class CpuElasticSubset(CpuSubset):
     """
 
     def __init__(self, **kwargs):
-        kwargs['oversubscription'] = SubsetOversubscriptionBasedOnPerf(subset=self)
+        # Reinterpret oversubscription parameter as a perf indicator
+        kwargs['oversubscription'] = SubsetOversubscriptionBasedOnPerf(subset=self, perf=kwargs['oversubscription'])
         super().__init__(**kwargs)
 
         # Additional attributes
@@ -848,7 +849,7 @@ class CpuElasticSubset(CpuSubset):
             return subset_usage, consumers_usage, clean_needed
 
         # Nota bene : Market orders are managed from the oversubscription class
-        self.oversubscription.update_perf(subset_usage)
+        self.oversubscription.update_perf(subset_usage_hist=[tuple[1] for tuple in self.hist_usage])
         
         return subset_usage, consumers_usage, clean_needed
         

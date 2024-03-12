@@ -85,8 +85,8 @@ class SubsetMarket(object):
         """
         # Order list of actors based on priority
         index_to_insert = -1
-        for index, actor in enumerate(self.actors):
-            if self.actors_priority[actor] < priority:
+        for index, existing_actor in enumerate(self.actors):
+            if self.actors_priority[existing_actor] < priority:
                 index_to_insert = index
                 break
         
@@ -138,7 +138,7 @@ class SubsetMarket(object):
         removed_from_market = list()
         for actor in self.actors:  # Ordered from the high priority to the low-priority
             if (actor in self.current_orders and self.current_orders[actor]>0): #need core(s)
-                
+                print('MarketDebug: executing order', actor.oversubscription.perf, self.current_orders[actor])
                 self.__get_renters(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
                 removed_from_market.append(actor)
         ## Clean orders
@@ -191,12 +191,14 @@ class SubsetMarket(object):
         count_to_reclaim = quantity
         cpu_affected = list()
 
+        # TODO: check if unallocated resources first?
+
         # First, Nicely
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
-            if actor.get_available() >= 0:
-                reclaim_from_specific_actor = min(actor.get_available(), count_to_reclaim)
+            if actor.oversubscription.get_available() >= 0:
+                reclaim_from_specific_actor = min( actor.oversubscription.get_available(), count_to_reclaim)
                 count_to_reclaim -= reclaim_from_specific_actor
                 cpu_affected.extend(self.__transfer_resources(receiver=requester, sender=actor, amount=reclaim_from_specific_actor, simulation=simulation))
 
@@ -238,17 +240,23 @@ class SubsetMarket(object):
             if not simulation:
                 for cpu in cpu_affected: 
                     sender.remove_res(cpu)
+                    sender.sync_pinning()
             return cpu_affected
 
         # Generic case, choose from sender the closest core to receiver
+        cpuid_dict = {cpu.get_cpu_id():cpu for cpu in sender.get_res()}
+
         candidates = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, from_list=sender.get_res(), to_list=receiver.get_res(), exclude_max=False, distance_max=50)
-        candidates_ordered = sorted(candidates.items(), key=lambda item: item[1])
+        candidates_ordered = [cpuid_dict[cpuid] for cpuid, _ in sorted(candidates.items(), key=lambda item: item[1])]
+        
         for index, cpu in enumerate(candidates_ordered):
             if index >= amount:
                 break
             cpu_affected.append(cpu)
             if not simulation:
                 sender.remove_res(cpu)
+                sender.sync_pinning()
                 receiver.add_res(cpu)
+                receiver.sync_pinning()
         return cpu_affected
 
