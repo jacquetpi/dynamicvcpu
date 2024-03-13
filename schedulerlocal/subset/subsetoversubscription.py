@@ -1,5 +1,5 @@
 from schedulerlocal.domain.domainentity import DomainEntity
-from schedulerlocal.predictor.predictor import PredictorCsoaa, PredictorScrooge
+from schedulerlocal.predictor.predictor import PredictorMax, PredictorScrooge
 from schedulerlocal.subset.subsetmarket import SubsetMarket
 from math import ceil, floor
 import os
@@ -241,7 +241,7 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         for req_attribute in req_attributes:
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
-        self.predictor = PredictorScrooge()
+        self.predictor = PredictorMax()
 
     def register_market(self, market : SubsetMarket):
         self.market = market

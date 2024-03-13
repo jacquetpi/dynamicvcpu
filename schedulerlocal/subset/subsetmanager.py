@@ -325,6 +325,9 @@ class CpuSubsetManager(SubsetManager):
         #if success: self.balance_available_resources() # TODO: double check if needed?
         return success
 
+    def get_available(self):
+        return self.__get_available_cpus()
+
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float, subset_type : type = CpuSubset):
         """Try to create subset with specified capacity
         ----------
@@ -585,7 +588,7 @@ class CpuElasticSubsetManager(CpuSubsetManager):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.market = SubsetMarket(cpuset=self.cpuset)
+        self.market = SubsetMarket(subset_manager=self, cpuset=self.cpuset)
 
     def try_to_create_subset(self,  initial_capacity : int, oversubscription : float):
         """Try to create subset with specified capacity

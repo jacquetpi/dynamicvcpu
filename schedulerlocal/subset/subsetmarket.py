@@ -31,6 +31,7 @@ class SubsetMarket(object):
     """
 
     def __init__(self, **kwargs):
+        self.subset_manager = kwargs['subset_manager']
         self.cpuset = kwargs['cpuset']
         self.actors_priority = dict()
         self.actors          = list()
@@ -184,16 +185,28 @@ class SubsetMarket(object):
         cpu_affected : List
             List of CPU affected
         """
-        # First,  ask nicely
-        # Second, ask authoritatively
-        # Third,  steal from weakest
+        # First, check unallocated resources
+        # Second, ask others subsets nicely
+        # Third, steal from weakest neighbor
     
         count_to_reclaim = quantity
         cpu_affected = list()
 
-        # TODO: check if unallocated resources first?
+        # First, check unallocated resources
+        while True:
+            candidates = self.subset_manager.get_available()
+            if count_to_reclaim <= 0 or (not candidates):
+                break
+            
+            distance_from = cpu_affected if requester is None else requester.get_res()
+            closest = self.__get_ordered_cpu_list(list_to_sort=candidates, distance_from=distance_from)[0]
+            cpu_affected.append(closest)
+            count_to_reclaim -= 1
+            if (not simulation) and (requester != None): requester.add_res(closest)
 
-        # First, Nicely
+        if cpu_affected and (not simulation) and (requester != None): requester.sync_pinning()
+
+        # Second, ask neighbors nicely
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
@@ -205,10 +218,13 @@ class SubsetMarket(object):
             if count_to_reclaim <= 0:
                 break
 
-        # Third, steal
+        # Third, steal from weakest neighbor
         if (count_to_reclaim>0) and (requester != self.actor_fallback):
-            # TODO: use fallback
-            pass
+            let_to_fallback_at_least = self.actor_fallback.get_max_consumer_allocation()
+            reclaim_from_fallback = min(self.actor_fallback.get_capacity()-let_to_fallback_at_least, count_to_reclaim)
+            if reclaim_from_fallback>0:
+                cpu_affected.extend(self.__transfer_resources(receiver=requester, sender=self.actor_fallback, amount=reclaim_from_fallback, simulation=simulation))
+                count_to_reclaim -= reclaim_from_fallback
 
         return cpu_affected
 
@@ -240,23 +256,26 @@ class SubsetMarket(object):
             if not simulation:
                 for cpu in cpu_affected: 
                     sender.remove_res(cpu)
-                    sender.sync_pinning()
+                sender.sync_pinning()
             return cpu_affected
 
         # Generic case, choose from sender the closest core to receiver
-        cpuid_dict = {cpu.get_cpu_id():cpu for cpu in sender.get_res()}
-
-        candidates = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, from_list=sender.get_res(), to_list=receiver.get_res(), exclude_max=False, distance_max=50)
-        candidates_ordered = [cpuid_dict[cpuid] for cpuid, _ in sorted(candidates.items(), key=lambda item: item[1])]
-        
+        candidates_ordered = self.__get_ordered_cpu_list(list_to_sort=sender.get_res(), distance_from=receiver.get_res())
         for index, cpu in enumerate(candidates_ordered):
             if index >= amount:
                 break
             cpu_affected.append(cpu)
             if not simulation:
                 sender.remove_res(cpu)
-                sender.sync_pinning()
                 receiver.add_res(cpu)
-                receiver.sync_pinning()
+
+        if not simulation: # avoid the sync in the loop
+            sender.sync_pinning()
+            receiver.sync_pinning()
+
         return cpu_affected
 
+    def __get_ordered_cpu_list(self, list_to_sort : list, distance_from : list):
+        cpuid_dict = {cpu.get_cpu_id():cpu for cpu in list_to_sort}
+        candidates = cpuset_utils.get_cpus_with_weight(cpuset=self.cpuset, from_list=list_to_sort, to_list=distance_from, exclude_max=False, distance_max=50)
+        return [cpuid_dict[cpuid] for cpuid, _ in sorted(candidates.items(), key=lambda item: item[1])]
