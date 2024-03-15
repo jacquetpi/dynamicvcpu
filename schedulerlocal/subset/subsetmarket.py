@@ -200,6 +200,7 @@ class SubsetMarket(object):
             
             distance_from = cpu_affected if requester is None else requester.get_res()
             closest = self.__get_ordered_cpu_list(list_to_sort=candidates, distance_from=distance_from)[0]
+
             cpu_affected.append(closest)
             count_to_reclaim -= 1
             if (not simulation) and (requester != None): requester.add_res(closest)
@@ -210,6 +211,7 @@ class SubsetMarket(object):
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
+
             if actor.oversubscription.get_available() >= 0:
                 reclaim_from_specific_actor = min( actor.oversubscription.get_available(), count_to_reclaim)
                 count_to_reclaim -= reclaim_from_specific_actor
