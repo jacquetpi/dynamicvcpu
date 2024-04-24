@@ -267,6 +267,20 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
             
         self.market.pass_order(self.subset, request)
 
+    def unused_resources_count(self):
+        """Return attributed physical resources which are unused
+        ----------
+
+        Returns
+        -------
+        unused : int
+            count of unused resources
+        """
+        allocation_max = ceil(self.subset.get_allocation() * (1+(self.perf/100))) # sum of vcpus
+        if self.subset.get_capacity() > allocation_max:
+            return self.subset.get_capacity() - allocation_max
+        return 0 # let the market decide
+
     def get_available(self, with_new_resources : int  = 0):
         """Return the number of virtual resource available. May be negative
         ----------

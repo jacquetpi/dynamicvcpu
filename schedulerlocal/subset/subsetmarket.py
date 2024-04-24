@@ -53,6 +53,7 @@ class SubsetMarket(object):
         status : bool
             True if effective, False otherwise
         """
+        return True
         if (self.effective is None) or recompute:
             allocation = 0
             for actor in self.actors:
@@ -211,7 +212,7 @@ class SubsetMarket(object):
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
-
+            
             if actor.oversubscription.get_available() >= 0:
                 reclaim_from_specific_actor = min( actor.oversubscription.get_available(), count_to_reclaim)
                 count_to_reclaim -= reclaim_from_specific_actor
