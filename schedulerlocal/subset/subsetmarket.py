@@ -53,7 +53,6 @@ class SubsetMarket(object):
         status : bool
             True if effective, False otherwise
         """
-        return True
         if (self.effective is None) or recompute:
             allocation = 0
             for actor in self.actors:

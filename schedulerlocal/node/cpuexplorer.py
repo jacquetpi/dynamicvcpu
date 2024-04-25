@@ -135,7 +135,8 @@ class CpuExplorer:
             prev_idle, prev_not_idle = hist_object.get_time()
             delta_idle     = idle - prev_idle
             delta_total    = (idle + not_idle) - (prev_idle + prev_not_idle)
-            cpu_usage      = (delta_total-delta_idle)/delta_total
+            if delta_total>0:
+                cpu_usage = (delta_total-delta_idle)/delta_total
         hist_object.set_time(idle=idle, not_idle=not_idle)
         return cpu_usage
 

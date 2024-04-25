@@ -220,11 +220,16 @@ class DataEndpointCSV(DataEndpoint):
         ----------
         """
         if self.input_file is None: raise ValueError('No CSV input file specified')
+        if timestamp not in self.input_subset[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())]:
+            print('Warning; unfound timestamp, returning last subset value')
+            return self.last_subset,self. last_vm
         subset_usage = self.input_subset[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())][timestamp]
         vm_usage = dict()
         for vm_line in self.input_vm[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())][timestamp]:
             uuid, value = vm_line
             vm_usage[uuid] = (self.__get_vm_from_uuid(uuid), value)
+        self.last_subset = subset_usage
+        self.last_vm = vm_usage
         return subset_usage, vm_usage
 
     def load_global(self, timestamp : int, manager):
@@ -232,6 +237,10 @@ class DataEndpointCSV(DataEndpoint):
         ----------
         """
         if self.input_file is None: raise ValueError('No CSV input file specified')
+        if timestamp not in self.input_global[manager.get_res_name()]:
+            print('Warning; unfound timestamp, returning last global value')
+            return self.last_global 
+        self.last_global = self.input_global[manager.get_res_name()][timestamp]
         return self.input_global[manager.get_res_name()][timestamp]
 
     def store(self, record : dict):
@@ -282,7 +291,7 @@ class DataEndpointCSV(DataEndpoint):
         """
         if ('cpu' not in self.input_vm_spec[uuid]) or ('mem' not in self.input_vm_spec[uuid]): return None
         return DomainEntity(name=self.input_vm_spec[uuid]['name'], mem=int(self.input_vm_spec[uuid]['mem']),\
-                cpu=int(self.input_vm_spec[uuid]['cpu']), cpu_ratio=float(self.input_vm_spec[uuid]['cpu_r']), uuid=uuid)
+                cpu=int(self.input_vm_spec[uuid]['cpu']), cpu_ratio=self.input_vm_spec[uuid]['cpu_r'], uuid=uuid)
 
 
 class DataEndpointInfluxDB(DataEndpoint):
