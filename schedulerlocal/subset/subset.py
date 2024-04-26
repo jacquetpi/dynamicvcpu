@@ -806,8 +806,6 @@ class CpuElasticSubset(CpuSubset):
         self.hist_consumers_usage = dict()
         # Retrieve specific configuration
         self.MONITORING_WINDOW = int(os.getenv('SCL_ACT_MONITORING')) #records older than this value are progressively purged
-        self.MONITORING_LEARNING = int(os.getenv('SCL_ACT_LEARNING')) 
-        self.MONITORING_LEEWAY = int(os.getenv('SCL_ACT_LEEWAY'))
 
     def register_market(self, market : SubsetMarket):
         self.oversubscription.register_market(market)

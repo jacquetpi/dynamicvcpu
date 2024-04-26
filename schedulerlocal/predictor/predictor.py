@@ -54,7 +54,8 @@ class PredictorScrooge(Predictor):
         if (self.last_value is None) or recompute:
             if not data: # Shoud not happen
                 print('Warning, predict was called with no value')
-                return 0 # not defining it as last value to force recompute)
+                self.last_value = None # not defining it as last value to force recompute
+                return 0 
             self.__update_strike(data)
             self.last_value = mean(data) + self.strike * stdev(data)
         return self.last_value
@@ -71,6 +72,8 @@ class PredictorScrooge(Predictor):
         self.strike = updated_strike
 
     def __is_quescient(self, data, debug = False):
+        return True # Too force N-Sigma behavior for now
+
         # TODO: check on enough data and/or last training timestamp?
         look_back = 1
         

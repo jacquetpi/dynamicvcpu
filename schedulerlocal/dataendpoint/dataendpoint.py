@@ -222,7 +222,8 @@ class DataEndpointCSV(DataEndpoint):
         if self.input_file is None: raise ValueError('No CSV input file specified')
         if timestamp not in self.input_subset[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())]:
             print('Warning; unfound timestamp, returning last subset value')
-            return self.last_subset,self. last_vm
+            if hasattr(self,'last_subset,self'): return self.last_subset,self. last_vm
+            return 0, dict()
         subset_usage = self.input_subset[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())][timestamp]
         vm_usage = dict()
         for vm_line in self.input_vm[subset.get_res_name()]['subset-' + str(subset.get_oversubscription_id())][timestamp]:
@@ -239,7 +240,8 @@ class DataEndpointCSV(DataEndpoint):
         if self.input_file is None: raise ValueError('No CSV input file specified')
         if timestamp not in self.input_global[manager.get_res_name()]:
             print('Warning; unfound timestamp, returning last global value')
-            return self.last_global 
+            if hasattr(self,'last_global'): return self.last_global 
+            return 0
         self.last_global = self.input_global[manager.get_res_name()][timestamp]
         return self.input_global[manager.get_res_name()][timestamp]
 

@@ -84,6 +84,8 @@ class SubsetMarket(object):
         priority : int
             Priority value (index, the higher, the more important it is)
         """
+        if actor in self.actors: return
+
         # Order list of actors based on priority
         index_to_insert = -1
         for index, existing_actor in enumerate(self.actors):
@@ -140,8 +142,9 @@ class SubsetMarket(object):
         for actor in self.actors:  # Ordered from the high priority to the low-priority
             if (actor in self.current_orders and self.current_orders[actor]>0): #need core(s)
                 print('MarketDebug: executing order', actor.oversubscription.perf, self.current_orders[actor])
-                self.__get_renters(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
+                cpu_affected = self.__get_renters(requester=actor, quantity=self.current_orders[actor], to_ignore=removed_from_market)
                 removed_from_market.append(actor)
+                del self.current_orders[actor]
         ## Clean orders
         self.current_orders.clear()
 
@@ -206,12 +209,13 @@ class SubsetMarket(object):
             if (not simulation) and (requester != None): requester.add_res(closest)
 
         if cpu_affected and (not simulation) and (requester != None): requester.sync_pinning()
-
-        # Second, ask neighbors nicely
+        if count_to_reclaim <= 0: return cpu_affected
+        
+        # Second, ask neighbors nicely    
         for actor in reversed(self.actors): # Ordered from the low-priority to the high priority
             if (actor == requester) or (actor in to_ignore):
                 continue
-            
+
             if actor.oversubscription.get_available() >= 0:
                 reclaim_from_specific_actor = min( actor.oversubscription.get_available(), count_to_reclaim)
                 count_to_reclaim -= reclaim_from_specific_actor

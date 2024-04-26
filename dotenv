@@ -15,8 +15,6 @@ SCL_URL="127.0.0.1"
 SCL_PORT="8100"
 #---- Active cores
 SCL_ACT_MONITORING=3600 # Monitoring window duration for VMs when computing active cores in seconds
-SCL_ACT_LEARNING=300 # Aggregation window
-SCL_ACT_LEEWAY=5 # Value used to calibrate optimistic degree of predicted VM future usage peak (0 to disable). Higher SCL_DELAY should set higher Leeway value
 #---- QEMU
 QEMU_URL="qemu:///system"
 QEMU_LOC="/usr/bin/qemu-system-x86_64"

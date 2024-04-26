@@ -241,7 +241,7 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
         for req_attribute in req_attributes:
             if req_attribute not in kwargs: raise ValueError('Missing required argument', req_attributes)
             setattr(self, req_attribute, kwargs[req_attribute])
-        self.predictor = PredictorMax()
+        self.predictor = PredictorScrooge()
 
     def register_market(self, market : SubsetMarket):
         self.market = market
@@ -258,10 +258,9 @@ class SubsetOversubscriptionBasedOnPerf(SubsetOversubscription):
             return
 
         peak = self.predictor.predict(data=subset_usage_hist, recompute=True)
-
         peak_with_constraint =  ceil(peak*(1+(self.perf/100)))
+        
         request = 0
-
         if peak_with_constraint > self.subset.count_res():
             request = ceil(peak_with_constraint - self.subset.count_res())
             

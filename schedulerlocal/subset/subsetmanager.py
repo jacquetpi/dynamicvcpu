@@ -346,29 +346,31 @@ class CpuSubsetManager(SubsetManager):
         """
         if initial_capacity <=0 : raise ValueError('Cannot create a subset with negative capacity', initial_capacity)
         
-        # Starting point
+        # Checking feasibility
         available_cpus_ordered = self.__get_farthest_available_cpus()
-
         if len(available_cpus_ordered) < initial_capacity: 
             # If type of subsetmanager allows it, try to reclaim from existing subsets
-            amount_post_reclaim = len(available_cpus_ordered) + len(self.try_to_reclaim_for_subset(simulation=True, request=(initial_capacity - len(available_cpus_ordered))))
+            possible_reclaim = self.try_to_reclaim_for_subset(simulation=True, request=(initial_capacity - len(available_cpus_ordered)))
+            amount_post_reclaim = len(available_cpus_ordered) + len(possible_reclaim)
             if amount_post_reclaim < initial_capacity: 
                 return None # Failed
             
-            available_cpus_ordered.extend(self.try_to_reclaim_for_subset(simulation=False, request=(initial_capacity - len(available_cpus_ordered))))
-            
-        # Starting allocation
-        starting_cpu = available_cpus_ordered[0]
+        # Creation
         cpu_subset = subset_type(connector=self.connector, cpu_explorer=self.cpu_explorer, endpoint_pool=self.endpoint_pool,\
             oversubscription=oversubscription, cpu_count=self.cpuset.get_host_count(), offline=self.offline)
-        cpu_subset.add_res(starting_cpu)
+        if available_cpus_ordered:
+            cpu_subset.add_res(available_cpus_ordered[0])
+            initial_capacity-=1 # One was attributed
+            while True:
+                available_cpus_ordered = self.__get_closest_available_cpus(cpu_subset) # Recompute based on chosen starting point(s)
+                if initial_capacity<=0 or (not available_cpus_ordered): break
+                cpu_subset.add_res(available_cpus_ordered[0])
+                initial_capacity-=1
 
-        initial_capacity-=1 # One was attributed
+        # Check if there were enough available resources to fullfill initial request, otherwise, transfer them
         if initial_capacity>0:
-            available_cpus_ordered = self.__get_closest_available_cpus(cpu_subset) # Recompute based on chosen starting point
-            for i in range(initial_capacity): cpu_subset.add_res(available_cpus_ordered[i])
+            self.try_to_reclaim_for_subset(simulation=False, subset=cpu_subset, request=initial_capacity)
 
-        self.market.register_actor(actor=cpu_subset, priority=oversubscription)
         return cpu_subset
 
     def try_to_extend_subset(self, subset : CpuSubset, amount : int):
@@ -391,13 +393,14 @@ class CpuSubsetManager(SubsetManager):
         available_cpus_ordered = self.__get_closest_available_cpus(subset)
         if len(available_cpus_ordered) < amount:
             # If type of subsetmanager allows it, try to reclaim from existing subsets
-            amount_post_reclaim = len(available_cpus_ordered) + len(self.try_to_reclaim_for_subset(simulation=True, subset=subset, request=(amount - len(available_cpus_ordered))))
+            possible_reclaim = self.try_to_reclaim_for_subset(simulation=True, subset=subset, request=(amount - len(available_cpus_ordered)))
+            amount_post_reclaim = len(available_cpus_ordered) + len(possible_reclaim)
             if amount_post_reclaim < amount: 
-                return None # Failed
-
-            available_cpus_ordered.extend(self.try_to_reclaim_for_subset(simulation=False, subset=subset, request=(amount - len(available_cpus_ordered))))
+                return False # Failed
+            # Apply resources transfer 
+            amount-= len(self.try_to_reclaim_for_subset(simulation=False, subset=subset, request=(amount - len(available_cpus_ordered))))
             
-        subset.add_res(available_cpus_ordered[0])
+        if available_cpus_ordered and amount>0: subset.add_res(available_cpus_ordered[0])
         return self.try_to_extend_subset(subset,amount=(amount-1))
 
     def try_to_reclaim_for_subset(self,  request : int, subset : CpuSubset = None, simulation : bool = True):
