@@ -40,7 +40,7 @@ class LibvirtConnector(object):
             try:
                 virDomain = self.conn.lookupByID(domain_id)
                 res.append(virDomain)
-            except libvirt.libvirtError as ex:  # VM is not alived anymore
+            except libvirt.libvirtError as ex:  # VM is not alive anymore
                 pass
         return res
 

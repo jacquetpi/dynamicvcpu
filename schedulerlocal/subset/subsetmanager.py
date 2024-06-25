@@ -904,6 +904,7 @@ class SubsetManagerPool(object):
             if not subset_manager.deploy(vm): 
                 success = False
                 reason = 'Not enough space on res ' + subset_manager.get_res_name()
+                subset_manager.remove(vm)
                 break
             treated.append(subset_manager)
         # If we succeed, the DOA DomainEntity was adapted according to the need of all subsetsManager. We apply changes using the connector

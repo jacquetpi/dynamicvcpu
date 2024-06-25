@@ -52,7 +52,7 @@ class PredictorScrooge(Predictor):
 
     def predict(self, data : list, recompute : bool = True):
         if (self.last_value is None) or recompute:
-            if not data: # Shoud not happen
+            if (not data) or (len(data) < 2): # Shoud not happen
                 print('Warning, predict was called with no value')
                 self.last_value = None # not defining it as last value to force recompute
                 return 0 
